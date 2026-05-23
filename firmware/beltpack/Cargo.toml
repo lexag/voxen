@@ -4,3 +4,13 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
+rodio = { version = "0.17.3", optional = true }
+eframe = { version = "0.34.2", optional = true }
+egui = { version = "0.34.2", optional = true }
+ringbuf = { version = "0.5.0", optional = true }
+winit = { version = "0.30.13", optional = true } 
+protocol = { path = "../../crates/protocol" } 
+
+[features]
+desktop = ["eframe", "egui", "winit", "rodio", "ringbuf"]
+ringbuf = ["dep:ringbuf"]

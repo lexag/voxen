@@ -20,7 +20,7 @@ impl Default for OpusHandler {
 
 impl OpusHandler {
     const PACKET_INTERVAL_MS: u32 = 10;
-    const SAMPLE_RATE: u32 = 48000;
+    pub const SAMPLE_RATE: u32 = 48000;
     pub const AUDIO_BUFFER_SIZE: usize =
         (Self::PACKET_INTERVAL_MS * Self::SAMPLE_RATE / 1000) as usize;
 
@@ -46,6 +46,16 @@ impl OpusHandler {
         let _ = encoder.set_inband_fec(Self::USE_FEC);
 
         let decoder = opus::Decoder::new(Self::SAMPLE_RATE, opus::Channels::Mono).unwrap();
+
+        println!(
+            "Initializing OpusHandler with:
+            {} samples audio buffer size
+            {} samples max opus buffer size
+            {} Hz sample rate",
+            Self::AUDIO_BUFFER_SIZE,
+            Self::OPUS_BUFFER_SIZE,
+            Self::SAMPLE_RATE
+        );
 
         Self { encoder, decoder }
     }
