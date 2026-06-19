@@ -9,6 +9,17 @@ mod hw_interface;
 mod hw_linux;
 
 fn main() {
-    let mut device = Device::new();
-    device.start();
+    loop {
+        let res = Device::try_new();
+        match res {
+            Ok(mut d) => {
+                println!("starting device");
+                d.start();
+                break;
+            }
+            Err(e) => {
+                println!("{e:?}");
+            }
+        }
+    }
 }

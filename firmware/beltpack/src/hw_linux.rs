@@ -1,11 +1,13 @@
-use crate::hw_interface::{HWImplementation, IndicatorState, InputState};
-use protocol::OpusHandler;
-use rodio::{buffer::SamplesBuffer, OutputStream, Sink};
+use crate::hw_interface::{HWImplementation, HardwareError, IndicatorState, InputState};
+use egui::Color32;
+use protocol::{AudioPacket, OpusHandler};
+use rodio::{OutputStream, Sink, buffer::SamplesBuffer};
 use std::{
+    net::{Ipv4Addr, UdpSocket},
     sync::{
+        Arc, Mutex,
         atomic::{AtomicBool, AtomicUsize, Ordering},
         mpsc::{self, Receiver, Sender, SyncSender},
-        Arc, Mutex,
     },
     time::Duration,
 };
@@ -15,6 +17,7 @@ pub struct LinuxDevice {
     out_sink: Sink,
     out_stream: OutputStream,
     out_writer: SyncSender<f32>,
+    net_socket: UdpSocket,
 }
 
 struct ChannelSource {
@@ -47,7 +50,7 @@ impl rodio::Source for ChannelSource {
 }
 
 impl HWImplementation for LinuxDevice {
-    fn new() -> Self {
+    fn try_new() -> Result<Self, HardwareError> {
         // Setup GUI
         let shared_app_state = Arc::new(Mutex::new(SharedAppState::default()));
         let state = shared_app_state.clone();
@@ -84,13 +87,17 @@ impl HWImplementation for LinuxDevice {
         };
 
         sink.append(source);
+        let net_socket =
+            UdpSocket::bind((Ipv4Addr::UNSPECIFIED, 0)).map_err(|_| HardwareError::NetworkBind)?;
+        let _ = net_socket.set_nonblocking(true);
 
-        Self {
+        Ok(Self {
+            net_socket,
             shared_app_state,
             out_sink: sink,
             out_stream: stream,
             out_writer: out_write,
-        }
+        })
     }
 
     fn get_input_state(&mut self) -> crate::hw_interface::InputState {
@@ -104,11 +111,11 @@ impl HWImplementation for LinuxDevice {
         shared_state.dirty = true;
     }
 
-    fn read_audio_buffer(&mut self, out: &mut [i16]) -> usize {
+    fn read_mic_buffer(&mut self, out: &mut [i16]) -> usize {
         0
     }
 
-    fn write_audio_buffer(&mut self, buf: &[i16]) -> usize {
+    fn write_speaker_buffer(&mut self, buf: &[i16]) -> usize {
         for sample in buf {
             self.out_writer.send(*sample as f32 / 32767.0).unwrap();
         }
@@ -116,6 +123,24 @@ impl HWImplementation for LinuxDevice {
     }
 
     fn init_hardware(&mut self) {}
+
+    fn network_recv(&mut self, buf: &mut [u8]) -> Result<usize, HardwareError> {
+        let res = self.net_socket.recv_from(buf);
+        match res {
+            Ok((size, _)) => return Ok(size),
+            // FIXME: this implies that all errors are to be understood as "no audio packet came in
+            // this time" which is mostly true, but we want to handle a few errors, like losing
+            // network connection, so we can indicate them to the user
+            Err(_) => return Ok(0),
+        };
+    }
+
+    fn network_send(&mut self, buf: &[u8]) -> Result<(), HardwareError> {
+        self.net_socket
+            .send(buf)
+            .map_err(|_| HardwareError::NetworkSend)?;
+        Ok(())
+    }
 }
 
 #[derive(Debug, Default)]
@@ -167,11 +192,58 @@ impl eframe::App for App {
         if ui.button("ABC").is_pointer_button_down_on() {
             state.input_state = InputState::ABC
         }
-        ui.label(state.indicator_state.to_string());
+        ui.horizontal(|ui| match state.indicator_state {
+            IndicatorState::Blank => {
+                ui.colored_label(Color32::GRAY, "A");
+                ui.colored_label(Color32::GRAY, "B");
+                ui.colored_label(Color32::GRAY, "C");
+            }
+            IndicatorState::Listening(a, b, c) => {
+                ui.colored_label(if a { Color32::CYAN } else { Color32::GRAY }, "A");
+                ui.colored_label(if b { Color32::CYAN } else { Color32::GRAY }, "B");
+                ui.colored_label(if c { Color32::CYAN } else { Color32::GRAY }, "C");
+            }
+            IndicatorState::Talking(target) => {
+                ui.colored_label(
+                    if target == 1 {
+                        Color32::LIGHT_GREEN
+                    } else {
+                        Color32::GRAY
+                    },
+                    "A",
+                );
+                ui.colored_label(
+                    if target == 2 {
+                        Color32::LIGHT_GREEN
+                    } else {
+                        Color32::GRAY
+                    },
+                    "B",
+                );
+                ui.colored_label(
+                    if target == 3 {
+                        Color32::LIGHT_GREEN
+                    } else {
+                        Color32::GRAY
+                    },
+                    "C",
+                );
+            }
+            IndicatorState::LowBattery => {
+                ui.colored_label(Color32::RED, "A");
+                ui.colored_label(Color32::RED, "B");
+                ui.colored_label(Color32::RED, "C");
+            }
+            IndicatorState::NoConnection => {
+                ui.colored_label(Color32::MAGENTA, "A");
+                ui.colored_label(Color32::MAGENTA, "B");
+                ui.colored_label(Color32::MAGENTA, "C");
+            }
+        });
 
         if state.dirty {
             state.dirty = false;
-            ui.ctx().request_repaint();
         }
+        ui.ctx().request_repaint();
     }
 }
