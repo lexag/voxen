@@ -4,5 +4,5 @@ resolver = "2"
 members = [
     "crates/protocol",
     "firmware/beltpack",
-    "base/daemon",
+    "base",
 ]
