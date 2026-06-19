@@ -97,7 +97,9 @@ impl OpusHandler {
     }
 }
 
+use base64::{Engine, engine::general_purpose::URL_SAFE};
 use packed_struct::prelude::*;
+use std::net::{Ipv4Addr, SocketAddrV4};
 
 #[derive(PackedStruct, serde::Serialize, serde::Deserialize)]
 #[packed_struct(bit_numbering = "msb0")]
@@ -145,5 +147,30 @@ impl PacketAddress {
 
     pub fn channel(&self) -> DeviceChannel {
         self.channel
+    }
+}
+
+#[derive(Debug, serde::Serialize, serde::Deserialize)]
+pub struct DeviceConfig {
+    pub id: u8,
+    pub base_addr: SocketAddrV4,
+}
+
+impl Default for DeviceConfig {
+    fn default() -> Self {
+        Self {
+            id: 255,
+            base_addr: SocketAddrV4::new(Ipv4Addr::new(192, 168, 1, 135), 8042),
+        }
+    }
+}
+
+impl DeviceConfig {
+    pub fn as_base64(&self) -> Option<String> {
+        Some(URL_SAFE.encode(postcard::to_vec::<Self, 1>(self).ok()?))
+    }
+
+    pub fn from_base64(vec: Vec<u8>) -> Option<Self> {
+        postcard::from_bytes(&URL_SAFE.decode(vec).ok()?).ok()?
     }
 }

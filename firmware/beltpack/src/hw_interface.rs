@@ -1,6 +1,6 @@
 use crate::device::Device;
 use core::fmt;
-use protocol::AudioPacket;
+use protocol::{AudioPacket, DeviceConfig};
 
 #[derive(Debug, Default, Clone, Eq, PartialEq, Copy)]
 pub enum InputState {
@@ -23,6 +23,7 @@ pub enum IndicatorState {
     Talking(u8),
     LowBattery,
     NoConnection,
+    Configuring,
 }
 
 impl fmt::Display for IndicatorState {
@@ -49,6 +50,8 @@ pub trait HWImplementation {
 
     fn network_recv(&mut self, buf: &mut [u8]) -> Result<usize, HardwareError>;
     fn network_send(&mut self, buf: &[u8]) -> Result<(), HardwareError>;
+
+    fn configure(&mut self) -> Option<DeviceConfig>;
 
     fn try_new() -> Result<Self, HardwareError>
     where

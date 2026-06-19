@@ -2,7 +2,7 @@ use crate::hw_interface::{HWImplementation, HardwareError, IndicatorState, Input
 #[cfg(feature = "desktop")]
 use crate::hw_linux::LinuxDevice;
 use core::f32;
-use protocol::{AudioPacket, OpusHandler, PacketAddress};
+use protocol::{AudioPacket, DeviceConfig, OpusHandler, PacketAddress};
 use std::net::{Ipv4Addr, SocketAddrV4};
 
 #[cfg(feature = "desktop")]
@@ -68,21 +68,6 @@ impl<T: Copy, const N: usize> ConstRingBuffer<T, N> {
     }
 }
 
-#[derive(Debug)]
-pub struct DeviceConfig {
-    pub id: u8,
-    pub base_addr: SocketAddrV4,
-}
-
-impl Default for DeviceConfig {
-    fn default() -> Self {
-        Self {
-            id: 255,
-            base_addr: SocketAddrV4::new(Ipv4Addr::new(192, 168, 1, 135), 8042),
-        }
-    }
-}
-
 pub struct Device {
     pub hardware: HWDevice,
     pub indication: IndicatorState,
@@ -128,10 +113,17 @@ impl Device {
 
     pub fn tick(&mut self) {
         const BUTTON_HOLD_THRESHOLD: usize = 300;
+        const BUTTON_LONGHOLD_THRESHOLD: usize = 3000;
         let inp = self.input();
         if inp == self.current_input.0 {
             // Holding
             self.current_input.1 += 1;
+            if inp != InputState::Nil {
+                if inp == InputState::AC && self.current_input.1 > BUTTON_LONGHOLD_THRESHOLD {
+                    self.indicate(IndicatorState::Configuring);
+                    self.enter_configuration_mode();
+                }
+            }
         } else if self.current_input.0 == InputState::Nil {
             // Press
             self.current_input.1 = 0;
@@ -284,6 +276,12 @@ impl Device {
         if self.indication != state {
             self.hardware.set_indicator_state(state);
             self.indication = state;
+        }
+    }
+
+    fn enter_configuration_mode(&mut self) {
+        if let Some(config) = self.hardware.configure() {
+            self.config = config;
         }
     }
 }

@@ -1,6 +1,6 @@
 use crate::hw_interface::{HWImplementation, HardwareError, IndicatorState, InputState};
-use egui::Color32;
-use protocol::{AudioPacket, OpusHandler};
+use egui::{Color32, Sense};
+use protocol::{AudioPacket, DeviceConfig, OpusHandler};
 use rodio::{OutputStream, Sink, buffer::SamplesBuffer};
 use std::{
     net::{Ipv4Addr, UdpSocket},
@@ -141,6 +141,31 @@ impl HWImplementation for LinuxDevice {
             .map_err(|_| HardwareError::NetworkSend)?;
         Ok(())
     }
+
+    fn configure(&mut self) -> Option<DeviceConfig> {
+        self.shared_app_state.lock().unwrap().config_bytes = vec![];
+        let mut n = 0;
+        while self
+            .shared_app_state
+            .lock()
+            .unwrap()
+            .config_bytes
+            .is_empty()
+        {
+            std::thread::sleep(Duration::from_secs(1));
+            if n > 10 {
+                return None;
+            }
+            n += 1;
+        }
+
+        let config =
+            DeviceConfig::from_base64(self.shared_app_state.lock().unwrap().config_bytes.clone())?;
+
+        self.net_socket.connect(config.base_addr);
+
+        Some(config)
+    }
 }
 
 #[derive(Debug, Default)]
@@ -148,6 +173,8 @@ pub struct SharedAppState {
     dirty: bool,
     input_state: InputState,
     indicator_state: IndicatorState,
+    config_bytes: Vec<u8>,
+    live_config_string: String,
 }
 
 #[derive(Debug, Default)]
@@ -171,25 +198,46 @@ impl eframe::App for App {
         let mut state = self.state.lock().unwrap();
 
         state.input_state = InputState::Nil;
-        if ui.button("A").is_pointer_button_down_on() {
+        if ui
+            .add(egui::Button::new("A").sense(Sense::click_and_drag()))
+            .is_pointer_button_down_on()
+        {
             state.input_state = InputState::A
         }
-        if ui.button("B").is_pointer_button_down_on() {
+        if ui
+            .add(egui::Button::new("B").sense(Sense::click_and_drag()))
+            .is_pointer_button_down_on()
+        {
             state.input_state = InputState::B
         }
-        if ui.button("C").is_pointer_button_down_on() {
+        if ui
+            .add(egui::Button::new("C").sense(Sense::click_and_drag()))
+            .is_pointer_button_down_on()
+        {
             state.input_state = InputState::C
         }
-        if ui.button("AB").is_pointer_button_down_on() {
+        if ui
+            .add(egui::Button::new("AB").sense(Sense::click_and_drag()))
+            .is_pointer_button_down_on()
+        {
             state.input_state = InputState::AB
         }
-        if ui.button("BC").is_pointer_button_down_on() {
+        if ui
+            .add(egui::Button::new("BC").sense(Sense::click_and_drag()))
+            .is_pointer_button_down_on()
+        {
             state.input_state = InputState::BC
         }
-        if ui.button("AC").is_pointer_button_down_on() {
+        if ui
+            .add(egui::Button::new("AC").sense(Sense::click_and_drag()))
+            .is_pointer_button_down_on()
+        {
             state.input_state = InputState::AC
         }
-        if ui.button("ABC").is_pointer_button_down_on() {
+        if ui
+            .add(egui::Button::new("ABC").sense(Sense::click_and_drag()))
+            .is_pointer_button_down_on()
+        {
             state.input_state = InputState::ABC
         }
         ui.horizontal(|ui| match state.indicator_state {
@@ -239,7 +287,19 @@ impl eframe::App for App {
                 ui.colored_label(Color32::MAGENTA, "B");
                 ui.colored_label(Color32::MAGENTA, "C");
             }
+            IndicatorState::Configuring => {
+                ui.colored_label(Color32::MAGENTA, "A");
+                ui.colored_label(Color32::GRAY, "B");
+                ui.colored_label(Color32::MAGENTA, "C");
+            }
         });
+
+        if state.indicator_state == IndicatorState::Configuring {
+            ui.text_edit_singleline(&mut state.live_config_string);
+            if ui.button("Submit Config").clicked() {
+                state.config_bytes = state.live_config_string.clone().into_bytes()
+            }
+        }
 
         if state.dirty {
             state.dirty = false;
