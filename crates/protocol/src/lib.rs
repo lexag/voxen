@@ -150,7 +150,7 @@ impl PacketAddress {
     }
 }
 
-#[derive(Debug, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, serde::Serialize, serde::Deserialize, Clone)]
 pub struct DeviceConfig {
     pub id: u8,
     pub base_addr: SocketAddrV4,
