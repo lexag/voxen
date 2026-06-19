@@ -1,7 +1,12 @@
+use serde_big_array::BigArray;
+
+#[derive(serde::Serialize, serde::Deserialize)]
 pub struct AudioPacket {
     pub timestamp: u32,
     pub sequence: u16,
     pub address: PacketAddress,
+    pub opus_size: u16,
+    #[serde(with = "BigArray")]
     pub opus_packet: [u8; OpusHandler::OPUS_BUFFER_SIZE],
 }
 
@@ -26,8 +31,8 @@ impl OpusHandler {
 
     const OPUS_BITRATE: usize = 32000;
     pub const OPUS_BUFFER_SIZE: usize = 1276; // maximum buffer size according to someone?
-                                              // i thought constant bitrate would be constant size but I guess not...
-                                              // Self::OPUS_BITRATE / 8 * Self::PACKET_INTERVAL_MS as usize / 1000;
+    // i thought constant bitrate would be constant size but I guess not...
+    // Self::OPUS_BITRATE / 8 * Self::PACKET_INTERVAL_MS as usize / 1000;
 
     const USE_FEC: bool = false;
 
@@ -94,7 +99,7 @@ impl OpusHandler {
 
 use packed_struct::prelude::*;
 
-#[derive(PackedStruct)]
+#[derive(PackedStruct, serde::Serialize, serde::Deserialize)]
 #[packed_struct(bit_numbering = "msb0")]
 pub struct PacketAddress {
     #[packed_field(bits = "0..=1", ty = "enum")]
@@ -103,12 +108,23 @@ pub struct PacketAddress {
     device_number: Integer<u8, packed_bits::Bits<6>>,
 }
 
-#[derive(PrimitiveEnum_u8, Clone, Copy, Debug, PartialEq)]
+#[derive(serde::Serialize, serde::Deserialize, PrimitiveEnum_u8, Clone, Copy, Debug, PartialEq)]
 pub enum DeviceChannel {
     Return = 0,
     A = 1,
     B = 2,
     C = 3,
+}
+
+impl From<u8> for DeviceChannel {
+    fn from(value: u8) -> Self {
+        match value {
+            1 => Self::A,
+            2 => Self::B,
+            3 => Self::C,
+            _ => Self::Return,
+        }
+    }
 }
 
 impl PacketAddress {
